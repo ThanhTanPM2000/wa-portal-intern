@@ -1,0 +1,267 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["referentialActions"]
+}
+
+generator dbml {
+  provider = "prisma-dbml-generator"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_DATABASE_URL")
+}
+
+model Account {
+  id           Int           @id @default(autoincrement())
+  userId       Int
+  wabaId       String        @unique
+  name         String?
+  businessName String?
+  businessId   String?
+  currency     String?
+  status       String?
+  timezone     String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  user         User          @relation(fields: [userId], references: [id])
+  manager      Manager?
+  partnerKey   PartnerKey[]
+  phoneNumber  PhoneNumber[]
+
+  @@index([userId])
+  @@index([wabaId])
+}
+
+model Manager {
+  id                           Int             @id @default(autoincrement())
+  partnerId                    Int?
+  accountId                    Int             @unique
+  partnerKeyId                 Int?
+  creditLineAllocationConfigId String?
+  creditLineState              CreditLineState @default(NONE)
+  state                        ManagerState
+  readyAt                      DateTime?
+  createdAt                    DateTime        @default(now())
+  updatedAt                    DateTime        @updatedAt
+  account                      Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  partner                      Partner?        @relation(fields: [partnerId], references: [id])
+  partnerKey                   PartnerKey?     @relation(fields: [partnerKeyId], references: [id])
+
+  @@index([accountId])
+  @@index([partnerId])
+}
+
+enum ManagerState {
+  IN_PROGRESS
+  VERIFYING
+  VERIFIED
+  READY
+}
+
+enum CreditLineState {
+  SHARED
+  MANUALLY_REVOKED
+  AUTO_REVOKED
+  NONE
+}
+
+model PartnerKey {
+  id                Int              @id @default(autoincrement())
+  partnerId         Int
+  accountId         Int?
+  serviceProviderId Int?
+  value             String
+  expiresAt         DateTime
+  usedAt            DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  account           Account?         @relation(fields: [accountId], references: [id])
+  partner           Partner          @relation(fields: [partnerId], references: [id])
+  managers          Manager[]
+  serviceProvider   ServiceProvider? @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, value])
+  @@index([partnerId, value])
+}
+
+model Partner {
+  id               Int                          @id @default(autoincrement())
+  userId           Int                          @unique
+  timezone         String
+  isActivated      Boolean                      @default(true)
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  user             User                         @relation(fields: [userId], references: [id])
+  manager          Manager[]
+  partnerKey       PartnerKey[]
+  apiKey           ApiKey?
+  serviceProviders ServiceProvidersOnPartners[]
+
+  @@index([userId])
+}
+
+model PhoneNumber {
+  id                     Int       @id @default(autoincrement())
+  accountId              Int
+  value                  String    @unique
+  shortenValue           String?   @unique
+  nameStatus             String?
+  qualityRating          String?
+  verifiedName           String?
+  status                 String?
+  limit                  String?
+  codeVerificationStatus String?
+  phoneNumberId          String?
+  provisionServer        ProvisionServer?
+  certLastCheckedAt      DateTime?
+  certAvailableAt        DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  account                Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([value])
+  @@index([shortenValue])
+}
+
+model Session {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  token     String
+  expiresAt DateTime
+  data      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  isAdmin       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  customerId    String    @default(uuid())
+  uplineUserId  Int?
+  account       Account[]
+  partner       Partner?
+  session       Session[]
+  audit         Audit[]
+  status        String    @default("NotInitiated")
+  uplineUser    User?     @relation("UplineDownlineUsers", fields: [uplineUserId], references: [id])
+  downlineUsers User[]    @relation("UplineDownlineUsers")
+
+  @@index([email])
+}
+
+enum AuditAction {
+  USER_LOGGED_IN
+  USER_LOGGED_OUT
+  USER_CANCEL_FACEBOOK_FLOW
+  WABA_CONNECT_FLOW_STARTED
+  USER_INIT_EMBEDDED_SIGNUP
+  USER_FINISH_EMBEDDED_SIGNUP
+  WABA_CONNECTION_REQUEST
+  WABA_CONNECT_FAILED
+  WABA_CONNECTED
+  WABA_CONNECTION_FAILED
+  PARTNER_TOKEN_GENERATED
+  PARTNER_TOKEN_DELETED
+  PARTNER_TOKEN_USED
+  PARTNER_PROMOTED
+  PARTNER_ACTIVATED
+  PARTNER_DEACTIVATED
+  CREDIT_LINE_REVOKED
+  CREDIT_LINE_SHARED
+  PHONE_MIGRATION_INIT
+  PHONE_MIGRATION_INIT_FAILED
+  PHONE_MIGRATION_REQUEST_OTP
+  PHONE_MIGRATION_REQUEST_OTP_FAILED
+  PHONE_MIGRATION_VERIFY_OTP
+  PHONE_MIGRATION_VERIFY_OTP_FAILED
+  PRONE_MIGRATION_VERIFIED_OTP
+}
+
+model Audit {
+  id        Int         @id @default(autoincrement())
+  action    AuditAction
+  payload   String?
+  authorId  Int?
+  timestamp DateTime    @default(now())
+  author    User?       @relation(fields: [authorId], references: [id])
+
+  @@index([action])
+}
+
+model ApiKey {
+  id        Int      @id @default(autoincrement())
+  value     String   @unique
+  partnerId Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(true)
+  partner   Partner  @relation(fields: [partnerId], references: [id])
+
+  @@index([partnerId])
+  @@index([value])
+}
+
+model WABAMigration {
+  id                         Int       @id @default(autoincrement())
+  ownerEmail                 String?
+  partnerEmail               String
+  existingWABAId             String   @unique
+  existingWABAName           String
+  newWABAId                  String   @unique
+  newWABAName                String
+  businessManagerId          String
+  phoneNumbers               String[]
+  businessVerificationStatus String?
+  WABAReviewStatus           String?
+  twoFADisabled              Boolean  @default(false)
+  krWABACreated              Boolean  @default(false)
+  clientConfirm              Boolean  @default(false)
+  readyForMigration          Boolean  @default(false)
+  migrationInitiated         Boolean  @default(false)
+  migrationConfirmed         Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}
+
+model ServiceProvider {
+  id                  Int                          @id @default(autoincrement())
+  name                String                       @unique
+  options             Json
+  partners            ServiceProvidersOnPartners[]
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  partnerKeys         PartnerKey[]
+  provisionServers    ProvisionServer[]
+  @@index([name])
+}
+
+model ProvisionServer {
+  id Int @id @default(autoincrement())
+  name String
+  options Json
+  serviceProviderId Int
+  serviceProvider ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  phoneNumberId Int
+  phoneNumber PhoneNumber @relation(fields: [phoneNumberId], references: [id])
+}
+
+model ServiceProvidersOnPartners {
+  partner           Partner         @relation(fields: [partnerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  partnerId         Int
+  serviceProvider   ServiceProvider @relation(fields: [serviceProviderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  serviceProviderId Int
+  assignedAt        DateTime        @default(now())
+  assignedBy        String
+
+  @@id([partnerId, serviceProviderId])
+}
